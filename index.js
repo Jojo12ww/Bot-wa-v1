@@ -1,4 +1,5 @@
-{ default: makeWASocket, DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const makeWASocket = require('@whiskeysockets/baileys').default;
+const { DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 
 console.log('🤖 Bot WhatsApp starting...');
@@ -6,17 +7,21 @@ console.log('🤖 Bot WhatsApp starting...');
 async function connectToWhatsApp() {
     console.log('📱 Menginisialisasi koneksi...');
     
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    const authState = await useMultiFileAuthState('auth_info_baileys');
+    const state = authState.state;
+    const saveCreds = authState.saveCreds;
     
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false // matikan default QR
+        printQRInTerminal: false
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
+    sock.ev.on('connection.update', function(update) {
+        const connection = update.connection;
+        const lastDisconnect = update.lastDisconnect;
+        const qr = update.qr;
         
         if (qr) {
             console.log('\n=================================');
@@ -29,14 +34,16 @@ async function connectToWhatsApp() {
         }
         
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            const statusCode = lastDisconnect && lastDisconnect.error && lastDisconnect.error.output ? lastDisconnect.error.output.statusCode : null;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            
             console.log('⚠️ Koneksi terputus!');
-            console.log('Status code:', lastDisconnect?.error?.output?.statusCode);
+            console.log('Status code:', statusCode);
             console.log('Reconnect?', shouldReconnect);
             
             if (shouldReconnect) {
                 console.log('🔄 Mencoba reconnect dalam 5 detik...');
-                setTimeout(() => {
+                setTimeout(function() {
                     connectToWhatsApp();
                 }, 5000);
             } else {
@@ -49,21 +56,20 @@ async function connectToWhatsApp() {
         }
     });
 
-    // Handler pesan masuk
-    sock.ev.on('messages.upsert', async (m) => {
+    sock.ev.on('messages.upsert', async function(m) {
         try {
             const msg = m.messages[0];
             if (!msg.message || msg.key.fromMe) return;
 
             const from = msg.key.remoteJid;
-            const text = msg.message.conversation || 
-                        msg.message.extendedTextMessage?.text || '';
+            const text = (msg.message.conversation || 
+                        (msg.message.extendedTextMessage && msg.message.extendedTextMessage.text) || 
+                        '');
 
             console.log('\n📨 Pesan masuk!');
             console.log('Dari:', from);
             console.log('Isi:', text);
 
-            // Auto reply
             if (text.toLowerCase() === 'ping') {
                 await sock.sendMessage(from, { text: '🏓 Pong! Bot online!' });
                 console.log('✅ Replied: Pong!');
@@ -75,11 +81,11 @@ async function connectToWhatsApp() {
             }
 
             if (text.toLowerCase() === 'menu') {
-                const menu = `📋 *MENU BOT*\n\n` +
-                           `• ping - Test bot\n` +
-                           `• halo - Sapa bot\n` +
-                           `• menu - Lihat menu ini\n` +
-                           `• info - Info bot`;
+                const menu = '📋 *MENU BOT*\n\n' +
+                           '• ping - Test bot\n' +
+                           '• halo - Sapa bot\n' +
+                           '• menu - Lihat menu ini\n' +
+                           '• info - Info bot';
                 await sock.sendMessage(from, { text: menu });
                 console.log('✅ Replied: Menu');
             }
@@ -95,22 +101,20 @@ async function connectToWhatsApp() {
     });
 }
 
-// Start bot
-connectToWhatsApp().catch(err => {
+connectToWhatsApp().catch(function(err) {
     console.error('❌ Fatal error:', err);
     process.exit(1);
 });
 
-// Handle process termination
-process.on('SIGINT', () => {
+process.on('SIGINT', function() {
     console.log('\n👋 Bot stopping...');
     process.exit(0);
 });
 
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', function(err) {
     console.error('❌ Uncaught Exception:', err);
 });
 
-process.on('unhandledRejection', (err) => {
+process.on('unhandledRejection', function(err) {
     console.error('❌ Unhandled Rejection:', err);
 });
